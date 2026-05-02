@@ -8,7 +8,7 @@ import json
 app = modal.App("viral-analyzer")
 
 image = (
-    modal.Image.debian_slim(python_version="3.11")
+    modal.Image.from_registry("nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04", add_python="3.11")
     .apt_install("ffmpeg")
     .run_commands("pip install yt-dlp")
     .pip_install(
@@ -22,7 +22,7 @@ image = (
 
 @app.function(
     image=image,
-    gpu="T4",
+    gpu=modal.gpu.T4(count=1),
     timeout=300,
     memory=4096,
 )
@@ -86,7 +86,7 @@ def analyze_video(item: dict) -> dict:
         ], timeout=60)
 
         # 5. Transcribe with Whisper
-        model = WhisperModel("base", device="cuda", compute_type="float16")
+        model = WhisperModel("base", device="cpu", compute_type="int8")
         segments, info = model.transcribe(audio_path, beam_size=5, word_timestamps=True)
 
         transcript_segments = []
