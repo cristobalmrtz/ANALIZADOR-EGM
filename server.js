@@ -10,11 +10,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
-const MODAL_TOKEN_ID = process.env.MODAL_TOKEN_ID;
-const MODAL_TOKEN_SECRET = process.env.MODAL_TOKEN_SECRET;
-const MODAL_APP = 'luiscrisma0107/main/deployed/viral-analyzer';
-const MODAL_FUNCTION = 'analyze_video';
-
+const MODAL_ENDPOINT_URL = process.env.MODAL_ENDPOINT_URL; // e.g. https://luiscrisma0107--viral-analyzer-analyze-video.modal.run
 
 // In-memory store (Phase 2: replace with DB)
 const reports = [];
@@ -22,15 +18,13 @@ const reports = [];
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 async function apifyRun(actorId, input) {
   const r = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${APIFY_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input)
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input)
   });
   if (!r.ok) throw new Error(`Apify run failed: ${r.status} ${await r.text()}`);
   return r.json();
 }
 
-async function apifyPoll(runId, maxAttempts = 25, intervalMs = 5000) {
+async function apifyPoll(runId, maxAttempts = 30, intervalMs = 5000) {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(r => setTimeout(r, intervalMs));
     const r = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`);
@@ -48,10 +42,6 @@ async function apifyDataset(datasetId, limit = 50) {
 }
 
 async function callClaude(system, userContent, maxTokens = 5000) {
-  const messages = Array.isArray(userContent)
-    ? [{ role: 'user', content: userContent }]
-    : [{ role: 'user', content: userContent }];
-
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -63,7 +53,9 @@ async function callClaude(system, userContent, maxTokens = 5000) {
       model: 'claude-sonnet-4-6',
       max_tokens: maxTokens,
       system,
-      messages
+      messages: Array.isArray(userContent)
+        ? [{ role: 'user', content: userContent }]
+        : [{ role: 'user', content: userContent }]
     })
   });
   const data = await r.json();
@@ -79,68 +71,29 @@ function parseJSON(raw) {
 }
 
 async function callModal(videoUrl) {
-  const MODAL_URL = process.env.MODAL_ENDPOINT_URL;
-  if (!MODAL_URL) throw new Error('MODAL_ENDPOINT_URL not set');
+  if (!MODAL_ENDPOINT_URL) {
+    throw new Error('MODAL_ENDPOINT_URL no está configurada en las variables de entorno de Render.');
+  }
 
-  const r = await fetch(MODAL_URL, {
+  console.log('Calling Modal endpoint:', MODAL_ENDPOINT_URL);
+
+  const r = await fetch(MODAL_ENDPOINT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ video_url: videoUrl })
   });
 
-  if (!r.ok) throw new Error(`Modal error: ${r.status}`);
-  return r.json();
-}
+  console.log('Modal response status:', r.status);
 
-  const auth = Buffer.from(`${MODAL_TOKEN_ID}:${MODAL_TOKEN_SECRET}`).toString('base64');
-
-  const callRes = await fetch(
-    `https://api.modal.com/v1/functions/viral-analyzer-analyze-video/call`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
-      body: JSON.stringify({ args: [videoUrl], kwargs: {} })
-    }
-  );
-
-  if (!callRes.ok) {
-    const errText = await callRes.text();
-    throw new Error(`Modal call failed ${callRes.status}: ${errText.substring(0, 200)}`);
+  if (!r.ok) {
+    const errText = await r.text();
+    throw new Error(`Modal error ${r.status}: ${errText.substring(0, 300)}`);
   }
 
-  const { call_id } = await callRes.json();
-
-  // Poll for result (max 5 min)
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    const resultRes = await fetch(
-      `https://api.modal.com/v1/calls/${call_id}/result`,
-      { headers: { 'Authorization': `Basic ${auth}` } }
-    );
-    if (resultRes.status === 200) return resultRes.json();
-    if (resultRes.status !== 202) throw new Error(`Modal polling error: ${resultRes.status}`);
-  }
-  throw new Error('Modal timed out after 5 minutes');
+  const result = await r.json();
+  console.log('Modal success - duration:', result.duration, 'transcript length:', result.full_transcript?.length);
+  return result;
 }
-
-// ── 12 SCRIPT STRUCTURES ──────────────────────────────────────────────────────
-const STRUCTURES = {
-  // ATRACCIÓN
-  1: { cat: 'ATRACCIÓN', name: 'Síntoma → Creencia errónea → Problema invisible → Mini solución → CTA', steps: ['Síntoma', 'Creencia errónea', 'Problema invisible', 'Micro-explicación', 'Mini solución', 'CTA'] },
-  2: { cat: 'ATRACCIÓN', name: 'Contradicción directa → Reframe → Enseñanza → Aplicación', steps: ['Contradicción directa', 'Reframe', 'Enseñanza', 'Aplicación/CTA'] },
-  3: { cat: 'ATRACCIÓN', name: 'Pregunta incómoda → Diagnóstico → Clasificación → Solución', steps: ['Pregunta incómoda', 'Diagnóstico', 'Clasificación', 'Solución/CTA'] },
-  4: { cat: 'ATRACCIÓN', name: 'Mito → Demolición → Verdad → Sistema simple', steps: ['Mito', 'Demolición', 'Verdad', 'Sistema simple/CTA'] },
-  // RETENCIÓN
-  5: { cat: 'RETENCIÓN', name: 'Open Loop → Desarrollo → Giro → Resolución', steps: ['Open loop (gancho)', 'Desarrollo', 'Giro inesperado', 'Resolución/CTA'] },
-  6: { cat: 'RETENCIÓN', name: 'Antes → Intentos fallidos → Descubrimiento → Después → Lección', steps: ['Antes (situación inicial)', 'Intentos fallidos', 'Descubrimiento clave', 'Después (resultado)', 'Lección/CTA'] },
-  7: { cat: 'RETENCIÓN', name: 'Demostración → Explicación → Breakdown → CTA', steps: ['Demostración visual', 'Explicación', 'Breakdown (desglose)', 'CTA'] },
-  8: { cat: 'RETENCIÓN', name: 'Error → Corrección → Comparación → Resultado', steps: ['Error común', 'Corrección', 'Comparación (antes/después)', 'Resultado/CTA'] },
-  // VENTA
-  9: { cat: 'VENTA', name: 'Dolor → Valor → Autoridad → Objeción → CTA', steps: ['Dolor (hook)', 'Valor entregado', 'Autoridad', 'Objeción resuelta', 'CTA/Venta'] },
-  10: { cat: 'VENTA', name: 'Historia → Identificación → Punto de quiebre → Solución → Oferta', steps: ['Historia inicial', 'Identificación del lector', 'Punto de quiebre', 'Solución', 'Oferta/CTA'] },
-  11: { cat: 'VENTA', name: 'Problema → Costo de no actuar → Oportunidad → CTA', steps: ['Problema urgente', 'Costo de no actuar', 'Oportunidad', 'CTA urgente'] },
-  12: { cat: 'VENTA', name: 'Micro-valor → Prueba → Expansión → Cierre', steps: ['Micro-valor (tip rápido)', 'Prueba/ejemplo', 'Expansión', 'Cierre/CTA'] }
-};
 
 // ── H1: VIDEO ANALYSIS ────────────────────────────────────────────────────────
 app.post('/api/h1/analyze', async (req, res) => {
@@ -151,13 +104,18 @@ app.post('/api/h1/analyze', async (req, res) => {
 
     const platform = videoUrl.includes('tiktok') ? 'TikTok' : 'Instagram';
 
-    // Step 1: Try Modal for real video analysis
+    // Step 1: Modal processes the video
     let videoData = null;
     let modalWorked = false;
     try {
       videoData = await callModal(videoUrl);
-      modalWorked = true;
-      console.log('Modal success - duration:', videoData.duration, 'transcript length:', videoData.full_transcript?.length);
+      if (videoData.error) {
+        console.error('Modal returned error:', videoData.error);
+        modalWorked = false;
+        videoData = { duration: 0, language: 'es', full_transcript: '', transcript_segments: [], key_frames: [], total_frames: 0 };
+      } else {
+        modalWorked = true;
+      }
     } catch (modalErr) {
       console.error('Modal failed:', modalErr.message);
       videoData = { duration: 0, language: 'es', full_transcript: '', transcript_segments: [], key_frames: [], total_frames: 0 };
@@ -166,76 +124,108 @@ app.post('/api/h1/analyze', async (req, res) => {
     const hasTranscript = videoData.full_transcript?.trim().length > 20;
     const hasFrames = videoData.key_frames?.length > 0;
 
-    // Build Claude message content
+    // Step 2: Build Claude message
     const userContent = [];
 
-    // Add key frames if available (hook frames first)
+    // Add hook frames if available
     if (hasFrames) {
       const hookFrames = videoData.key_frames.filter(f => f.section === 'hook').slice(0, 2);
-      const ctaFrames = videoData.key_frames.filter(f => f.section === 'cta').slice(0, 1);
-      for (const frame of [...hookFrames, ...ctaFrames]) {
-        userContent.push({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: frame.b64 } });
+      for (const frame of hookFrames) {
+        userContent.push({
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/jpeg', data: frame.b64 }
+        });
       }
     }
 
     userContent.push({
       type: 'text',
-      text: `Analiza este video viral de ${platform}.
+      text: `Eres un estratega experto en guiones virales para ${platform}.
 
-URL: ${videoUrl}
+Analiza este video viral y genera 2 guiones adaptados al nicho del usuario.
+
+URL del video: ${videoUrl}
+Plataforma: ${platform}
 Duración: ${videoData.duration}s
-Idioma: ${videoData.language || 'auto'}
+Idioma detectado: ${videoData.language || 'es'}
+Video procesado con IA visual: ${modalWorked ? 'SÍ - tienes frames reales' : 'NO - analiza con URL e infiere'}
 Nicho del usuario: ${userNiche}
-Video procesado con Modal: ${modalWorked ? 'Sí' : 'No (analiza con la URL e infiere)'}
 
-TRANSCRIPCIÓN COMPLETA:
-${hasTranscript ? videoData.full_transcript : 'No disponible - infiere basándote en la URL y el nicho'}
+TRANSCRIPCIÓN COMPLETA DEL VIDEO:
+${hasTranscript ? videoData.full_transcript : '(No disponible - el video puede ser privado o no tiene audio detectable)'}
 
 TRANSCRIPCIÓN CON TIMESTAMPS:
-${videoData.transcript_segments?.map(s => `[${s.start}s] ${s.text}`).join('\n') || 'No disponible'}
+${videoData.transcript_segments?.length > 0
+  ? videoData.transcript_segments.map(s => `[${s.start}s] ${s.text}`).join('\n')
+  : '(No disponible)'}
 
-INSTRUCCIONES:
+INSTRUCCIONES PARA EL ANÁLISIS:
 1. Analiza el video y determina su categoría: ATRACCIÓN, RETENCIÓN o VENTA
-2. De las 12 estructuras disponibles, elige la más adecuada según el contenido analizado
-3. Genera 2 guiones REALES, GRABABLES, en español natural (no corporativo):
-   - Guión LARGO: 30-45 segundos (±80-110 palabras)
-   - Guión CORTO: 15-25 segundos (±40-60 palabras)
-4. Los guiones deben estar adaptados al nicho: ${userNiche}
-5. Cada línea del guión debe ser una frase corta que se diga en 3-5 segundos
+2. Elige la estructura más adecuada de estas 12 opciones según el contenido:
+
+ATRACCIÓN:
+1. Síntoma → Creencia errónea → Problema invisible → Micro-explicación → Mini solución → CTA
+2. Contradicción directa → Reframe → Enseñanza → Aplicación
+3. Pregunta incómoda → Diagnóstico → Clasificación → Solución
+4. Mito → Demolición → Verdad → Sistema simple
+
+RETENCIÓN:
+5. Open Loop → Desarrollo → Giro → Resolución
+6. Antes → Intentos fallidos → Descubrimiento → Después → Lección
+7. Demostración → Explicación → Breakdown → CTA
+8. Error → Corrección → Comparación → Resultado
+
+VENTA:
+9. Dolor → Valor → Autoridad → Objeción → CTA
+10. Historia → Identificación → Punto de quiebre → Solución → Oferta
+11. Problema → Costo de no actuar → Oportunidad → CTA
+12. Micro-valor → Prueba → Expansión → Cierre
+
+3. Genera 2 guiones REALES adaptados al nicho "${userNiche}":
+   - GUIÓN LARGO: exactamente 30-45 segundos (entre 80-110 palabras)
+   - GUIÓN CORTO: exactamente 15-25 segundos (entre 40-60 palabras)
+
+REGLAS PARA LOS GUIONES:
+- Lenguaje natural y conversacional, NO corporativo
+- Cada frase máximo 8 palabras
+- El hook en la primera frase
+- Saltos de línea entre cada frase del guión
+- Adaptado 100% al nicho "${userNiche}"
+- Listo para grabar, sin indicaciones de dirección
 
 Responde SOLO con JSON válido:
 {
   "reporte": {
-    "hook_visual": "exactamente qué se ve en los primeros 3 segundos",
+    "hook_visual": "qué se ve exactamente en los primeros 3 segundos",
     "hook_verbal": "primeras palabras exactas del video",
     "tipo_hook": "curiosidad/dolor/promesa/controversia/pregunta/demostración",
-    "texto_pantalla": "todo el texto superpuesto en pantalla",
-    "transcripcion_limpia": "transcripción completa editada y limpia",
-    "ritmo_corte": "descripción del ritmo: lento/medio/rápido, cada cuántos segundos",
+    "texto_pantalla": "texto superpuesto en pantalla si existe",
+    "transcripcion_limpia": "transcripción completa limpia y editada",
+    "ritmo_corte": "lento/medio/rápido y cada cuántos segundos hay corte",
     "musica_sonido": "tipo de música o sonido de fondo",
     "cta_visual": "CTA visual si existe",
     "cta_verbal": "CTA verbal si existe",
     "estructura_detectada": "cómo está organizado el video paso a paso",
-    "por_que_viral": "análisis de por qué este video funciona",
+    "por_que_viral": "análisis de por qué este video funciona viralmente",
     "elementos_clave": ["elemento 1", "elemento 2", "elemento 3"]
   },
   "categoria": "ATRACCIÓN|RETENCIÓN|VENTA",
   "estructura_elegida": {
     "numero": 1,
-    "nombre": "nombre de la estructura",
-    "razon": "por qué elegiste esta estructura para este video y este nicho"
+    "nombre": "nombre exacto de la estructura",
+    "razon": "por qué elegiste esta estructura para este video y nicho"
   },
   "guion_largo": {
     "duracion_estimada": "30-45s",
-    "palabras": 0,
-    "estructura_pasos": ["paso 1: texto", "paso 2: texto"],
-    "guion_completo": "el guión completo listo para grabar, con saltos de línea entre frases"
+    "palabras": 95,
+    "estructura_pasos": ["Síntoma: texto...", "Creencia errónea: texto..."],
+    "guion_completo": "Línea 1 del guión.\nLínea 2 del guión.\nLínea 3 del guión."
   },
   "guion_corto": {
     "duracion_estimada": "15-25s",
-    "palabras": 0,
-    "estructura_pasos": ["paso 1: texto", "paso 2: texto"],
-    "guion_completo": "el guión corto completo listo para grabar"
+    "palabras": 50,
+    "estructura_pasos": ["Hook: texto...", "Valor: texto..."],
+    "guion_completo": "Línea 1 corta.\nLínea 2 corta.\nLínea 3 corta."
   },
   "meta": {
     "plataforma": "${platform}",
@@ -246,17 +236,15 @@ Responde SOLO con JSON válido:
 }`
     });
 
-    const SYSTEM = `Eres un experto en guiones virales para TikTok e Instagram. 
-Analizas videos reales y creas guiones que suenan naturales, directos y grabables.
-Los guiones que escribes son conversacionales, en primera persona, sin lenguaje corporativo.
-Cada frase es corta (3-5 palabras idealmente). El hook es lo más importante.
+    const SYSTEM = `Eres un experto en guiones virales para TikTok e Instagram.
+Analizas videos reales y creas guiones naturales, directos y grabables.
+Nunca usas lenguaje corporativo. Siempre en primera persona o segunda persona directa.
 SIEMPRE responde SOLO con JSON válido, sin markdown, sin texto adicional.`;
 
     const rawResponse = await callClaude(SYSTEM, userContent, 6000);
     const analysis = parseJSON(rawResponse);
     analysis.id = Date.now().toString();
 
-    // Save report
     reports.unshift({
       id: analysis.id,
       type: 'h1',
@@ -283,14 +271,13 @@ app.post('/api/h2/analyze', async (req, res) => {
     if (!profileUrl?.trim()) return res.status(400).json({ error: 'Falta la URL del perfil.' });
 
     const isTikTok = profileUrl.includes('tiktok');
-    const isInstagram = profileUrl.includes('instagram') || (!isTikTok && !profileUrl.includes('http'));
     let posts = [];
 
     if (isTikTok) {
       const username = profileUrl.match(/tiktok\.com\/@([^/?#\s]+)/)?.[1]
-        || profileUrl.replace('@','').replace(/https?:\/\//,'').trim();
+        || profileUrl.replace('@', '').replace(/https?:\/\//, '').trim();
 
-      console.log('Scraping TikTok profile:', username);
+      console.log('Scraping TikTok:', username);
       const runData = await apifyRun('clockworks~tiktok-profile-scraper', {
         profiles: [username],
         resultsPerPage: 50,
@@ -302,7 +289,7 @@ app.post('/api/h2/analyze', async (req, res) => {
       const raw = await apifyDataset(dsId, 50);
 
       posts = raw.map(p => ({
-        url: p.webVideoUrl || p.url || `https://www.tiktok.com/@${username}`,
+        url: p.webVideoUrl || p.url || '',
         caption: (p.text || p.desc || '').substring(0, 300),
         views: p.playCount || p.stats?.playCount || 0,
         likes: p.diggCount || p.stats?.diggCount || 0,
@@ -315,10 +302,10 @@ app.post('/api/h2/analyze', async (req, res) => {
     } else {
       // Instagram
       let cleanUrl = profileUrl.trim();
-      if (!cleanUrl.startsWith('http')) cleanUrl = `https://www.instagram.com/${cleanUrl.replace('@','')}/`;
+      if (!cleanUrl.startsWith('http')) cleanUrl = `https://www.instagram.com/${cleanUrl.replace('@', '')}/`;
       if (!cleanUrl.endsWith('/')) cleanUrl += '/';
 
-      console.log('Scraping Instagram profile:', cleanUrl);
+      console.log('Scraping Instagram:', cleanUrl);
       const runData = await apifyRun('apify~instagram-scraper', {
         directUrls: [cleanUrl],
         resultsType: 'posts',
@@ -329,7 +316,7 @@ app.post('/api/h2/analyze', async (req, res) => {
       const dsId = await apifyPoll(runData.data?.id, 30, 5000);
       const raw = await apifyDataset(dsId, 50);
 
-      if (!raw.length) throw new Error('No se encontraron posts. El perfil puede ser privado o la URL es incorrecta.');
+      if (!raw.length) throw new Error('No se encontraron posts. El perfil puede ser privado.');
 
       posts = raw.map(p => ({
         url: p.url || (p.shortCode ? `https://www.instagram.com/p/${p.shortCode}/` : ''),
@@ -339,11 +326,11 @@ app.post('/api/h2/analyze', async (req, res) => {
         comments: p.commentsCount || p.comments || 0,
         shares: 0,
         saves: p.savesCount || 0,
-        date: p.timestamp || p.taken_at || ''
+        date: p.timestamp || ''
       }));
     }
 
-    if (!posts.length) throw new Error('No se encontraron posts. El perfil puede ser privado.');
+    if (!posts.length) throw new Error('No se encontraron posts. El perfil puede ser privado o incorrecto.');
 
     // Score: saves×4 + shares×3 + comments×2 + likes×1 + views×0.05
     const scored = posts
@@ -356,7 +343,9 @@ app.post('/api/h2/analyze', async (req, res) => {
     const top10 = scored.slice(0, 10);
 
     // Claude pattern analysis
-    const prompt = `Analiza estos top 10 posts por engagement real de ${isTikTok ? 'TikTok' : 'Instagram'} y detecta qué tienen en común:
+    const SYSTEM_H2 = `Eres experto en análisis de contenido viral. Detectas patrones con precisión. Solo JSON válido, sin markdown.`;
+
+    const prompt = `Analiza estos top 10 posts por engagement real de ${isTikTok ? 'TikTok' : 'Instagram'} y detecta patrones:
 
 ${JSON.stringify(top10.map((p, i) => ({
   rank: i + 1,
@@ -369,7 +358,7 @@ ${JSON.stringify(top10.map((p, i) => ({
   score: Math.round(p.engagement_score)
 })), null, 2)}
 
-Responde SOLO con JSON:
+Responde con este JSON exacto:
 {
   "patron_general": "qué tienen en común estos 10 posts",
   "que_genera_guardados": "qué hace que los guarden",
@@ -381,7 +370,6 @@ Responde SOLO con JSON:
   "resumen": "insight principal en una frase"
 }`;
 
-    const SYSTEM_H2 = `Eres experto en análisis de contenido viral. Detectas patrones con precisión quirúrgica. Solo JSON válido.`;
     const rawPatterns = await callClaude(SYSTEM_H2, prompt, 2000);
     const patterns = parseJSON(rawPatterns);
 
@@ -412,12 +400,14 @@ Responde SOLO con JSON:
   }
 });
 
-// ── REPORTS API ───────────────────────────────────────────────────────────────
+// ── REPORTS ───────────────────────────────────────────────────────────────────
 app.get('/api/reports', (req, res) => res.json(reports.slice(0, 50)));
+
 app.get('/api/reports/:id', (req, res) => {
   const r = reports.find(x => x.id === req.params.id);
   r ? res.json(r) : res.status(404).json({ error: 'Not found' });
 });
+
 app.delete('/api/reports/:id', (req, res) => {
   const i = reports.findIndex(x => x.id === req.params.id);
   if (i === -1) return res.status(404).json({ error: 'Not found' });
