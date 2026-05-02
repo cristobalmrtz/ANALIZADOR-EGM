@@ -15,7 +15,7 @@ image = (
         "faster-whisper==1.0.3",
         "pillow",
         "fastapi",
-        "pydantic"
+        "pydantic",
         "requests"
     )
 )
