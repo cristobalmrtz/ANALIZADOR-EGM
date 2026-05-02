@@ -4,7 +4,6 @@ import tempfile
 import subprocess
 import base64
 import json
-from pathlib import Path
 from pydantic import BaseModel
 
 app = modal.App("viral-analyzer")
@@ -32,10 +31,6 @@ class VideoRequest(BaseModel):
 )
 @modal.fastapi_endpoint(method="POST")
 def analyze_video(request: VideoRequest) -> dict:
-    """
-    Web endpoint: POST {"video_url": "https://..."}
-    Returns frames + transcription
-    """
     from faster_whisper import WhisperModel
 
     video_url = request.video_url
@@ -48,24 +43,19 @@ def analyze_video(request: VideoRequest) -> dict:
 
         # 1. Download video
         result = subprocess.run([
-            "yt-dlp",
-            "-f", "best[ext=mp4]/best",
+            "yt-dlp", "-f", "best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "-o", video_path,
-            "--no-playlist",
-            "--max-filesize", "50m",
+            "--no-playlist", "--max-filesize", "50m",
             video_url
         ], capture_output=True, text=True, timeout=120)
 
         if not os.path.exists(video_path):
             return {
                 "error": f"Download failed: {result.stderr[:300]}",
-                "duration": 0,
-                "language": "es",
-                "full_transcript": "",
-                "transcript_segments": [],
-                "key_frames": [],
-                "total_frames": 0
+                "duration": 0, "language": "es",
+                "full_transcript": "", "transcript_segments": [],
+                "key_frames": [], "total_frames": 0
             }
 
         # 2. Get duration
@@ -74,12 +64,11 @@ def analyze_video(request: VideoRequest) -> dict:
             "-show_format", video_path
         ], capture_output=True, text=True)
         try:
-            probe_data = json.loads(probe.stdout)
-            duration = float(probe_data.get("format", {}).get("duration", 60))
+            duration = float(json.loads(probe.stdout).get("format", {}).get("duration", 60))
         except:
             duration = 60.0
 
-        # 3. Extract frames
+        # 3. Extract frames 1fps
         max_frames = min(int(duration), 60)
         subprocess.run([
             "ffmpeg", "-i", video_path,
@@ -96,13 +85,9 @@ def analyze_video(request: VideoRequest) -> dict:
             audio_path, "-y", "-loglevel", "error"
         ], timeout=60)
 
-        # 5. Transcribe
+        # 5. Transcribe with Whisper
         model = WhisperModel("base", device="cuda", compute_type="float16")
-        segments, info = model.transcribe(
-            audio_path,
-            beam_size=5,
-            word_timestamps=True
-        )
+        segments, info = model.transcribe(audio_path, beam_size=5, word_timestamps=True)
 
         transcript_segments = []
         full_text = ""
@@ -114,7 +99,7 @@ def analyze_video(request: VideoRequest) -> dict:
             })
             full_text += seg.text + " "
 
-        # 6. Key frames (hook + middle + cta)
+        # 6. Key frames: hook (0-2s) + middle + cta (last 3s)
         frame_files = sorted(os.listdir(frames_dir))
         total = len(frame_files)
         key_indices = sorted(set([
@@ -128,14 +113,12 @@ def analyze_video(request: VideoRequest) -> dict:
         key_frames = []
         for idx in key_indices:
             if 0 <= idx < total:
-                fp = os.path.join(frames_dir, frame_files[idx])
-                with open(fp, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode()
-                key_frames.append({
-                    "second": idx,
-                    "b64": b64,
-                    "section": "hook" if idx < 3 else ("cta" if idx >= total - 3 else "middle")
-                })
+                with open(os.path.join(frames_dir, frame_files[idx]), "rb") as f:
+                    key_frames.append({
+                        "second": idx,
+                        "b64": base64.b64encode(f.read()).decode(),
+                        "section": "hook" if idx < 3 else ("cta" if idx >= total - 3 else "middle")
+                    })
 
         return {
             "duration": round(duration),
