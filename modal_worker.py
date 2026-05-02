@@ -22,7 +22,7 @@ image = (
 
 @app.function(
     image=image,
-    gpu=modal.gpu.T4(count=1),
+    gpu="T4",
     timeout=300,
     memory=4096,
 )
