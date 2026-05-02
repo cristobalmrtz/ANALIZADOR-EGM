@@ -128,4 +128,3 @@ with tempfile.TemporaryDirectory() as tmpdir:
         "key_frames": key_frames,
         "total_frames": total
     }
-```
