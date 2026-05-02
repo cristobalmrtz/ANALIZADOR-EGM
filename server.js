@@ -12,8 +12,9 @@ const APIFY_TOKEN = process.env.APIFY_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_KEY;
 const MODAL_TOKEN_ID = process.env.MODAL_TOKEN_ID;
 const MODAL_TOKEN_SECRET = process.env.MODAL_TOKEN_SECRET;
-const MODAL_APP = 'viral-analyzer';
+const MODAL_APP = 'luiscrisma0107/main/deployed/viral-analyzer';
 const MODAL_FUNCTION = 'analyze_video';
+
 
 // In-memory store (Phase 2: replace with DB)
 const reports = [];
