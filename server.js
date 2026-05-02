@@ -79,9 +79,19 @@ function parseJSON(raw) {
 }
 
 async function callModal(videoUrl) {
-  if (!MODAL_TOKEN_ID || !MODAL_TOKEN_SECRET) {
-    throw new Error('Modal tokens not configured');
-  }
+  const MODAL_URL = process.env.MODAL_ENDPOINT_URL;
+  if (!MODAL_URL) throw new Error('MODAL_ENDPOINT_URL not set');
+
+  const r = await fetch(MODAL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video_url: videoUrl })
+  });
+
+  if (!r.ok) throw new Error(`Modal error: ${r.status}`);
+  return r.json();
+}
+
   const auth = Buffer.from(`${MODAL_TOKEN_ID}:${MODAL_TOKEN_SECRET}`).toString('base64');
 
   const callRes = await fetch(
