@@ -85,7 +85,7 @@ async function callModal(videoUrl) {
   const auth = Buffer.from(`${MODAL_TOKEN_ID}:${MODAL_TOKEN_SECRET}`).toString('base64');
 
   const callRes = await fetch(
-    `https://api.modal.com/v1/apps/${MODAL_APP}/functions/${MODAL_FUNCTION}/call`,
+    `https://api.modal.com/v1/functions/viral-analyzer-analyze-video/call`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
