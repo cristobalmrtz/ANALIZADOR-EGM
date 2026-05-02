@@ -16,6 +16,7 @@ image = (
         "pillow",
         "fastapi",
         "pydantic"
+        "requests"
     )
 )
 
