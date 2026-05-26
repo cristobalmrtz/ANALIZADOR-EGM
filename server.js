@@ -44,15 +44,14 @@ async function apifyDataset(datasetId, limit = 50) {
 }
 
 async function callClaude(system, userContent, maxTokens = 8000) {
+  const messages = Array.isArray(userContent) && userContent[0]?.role
+    ? userContent
+    : [{ role: 'user', content: userContent }];
+
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userContent }]
-    })
+    body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, system, messages })
   });
   const data = await r.json();
   if (data.error) throw new Error('Claude: ' + data.error.message);
@@ -90,23 +89,29 @@ function getLearningContext(nicho) {
     .slice(0, 8);
   if (nichoReports.length === 0) return '';
 
-  const hooks = [], ctas = [], estructuras = [], elementos = [];
+  const hooks = [], ctas = [], estructuras = [], elementos = [], categorias = [];
   nichoReports.forEach(r => {
     const d = r.data;
     if (d?.reporte?.hook_verbal) hooks.push(d.reporte.hook_verbal);
     if (d?.reporte?.cta_verbal) ctas.push(d.reporte.cta_verbal);
     if (d?.estructura_elegida?.nombre) estructuras.push(d.estructura_elegida.nombre);
     if (d?.reporte?.elementos_clave) elementos.push(...(d.reporte.elementos_clave || []));
+    if (d?.categoria) categorias.push(d.categoria);
   });
 
   if (hooks.length === 0) return '';
+
+  const catMasComun = categorias.sort((a,b) =>
+    categorias.filter(c=>c===b).length - categorias.filter(c=>c===a).length)[0];
+
   return `
-APRENDIZAJE ACUMULADO (${nichoReports.length} videos del nicho "${nicho}"):
-Hooks exitosos detectados: ${hooks.slice(0,4).map(h=>`"${h}"`).join(' | ')}
-CTAs efectivos: ${ctas.slice(0,3).map(c=>`"${c}"`).join(' | ')}
-Estructuras mas usadas: ${[...new Set(estructuras)].slice(0,3).join(', ')}
-Elementos recurrentes: ${[...new Set(elementos)].slice(0,5).join(', ')}
-USA estos patrones como inspiracion. NO copies textualmente. Evolucionaos.`;
+APRENDIZAJE ACUMULADO (${nichoReports.length} videos virales del nicho "${nicho}"):
+- Hooks que han funcionado: ${hooks.slice(0,4).map(h=>`"${h}"`).join(' | ')}
+- CTAs efectivos: ${ctas.slice(0,3).map(c=>`"${c}"`).join(' | ')}
+- Estructuras mas usadas: ${[...new Set(estructuras)].slice(0,3).join(', ')}
+- Elementos recurrentes: ${[...new Set(elementos)].slice(0,5).join(', ')}
+- Categoria dominante en este nicho: ${catMasComun || 'no determinada'}
+USA estos patrones como inspiracion. Evolucionaos. NO copies textualmente.`;
 }
 
 // ── ENGAGEMENT FORMULAS ───────────────────────────────────────────────────────
@@ -119,6 +124,96 @@ function scoreInstagram(p, followers) {
   return ((p.likes + (p.comments * 5)) / views) * (1 / Math.log10(subs)) * 100;
 }
 
+// ── MARKETING FRAMEWORK (K+E methodology) ────────────────────────────────────
+const MARKETING_FRAMEWORK = `
+METODOLOGIA K+E - FRAMEWORK COMPLETO PARA GUIONES VIRALES:
+
+PRINCIPIO BASE:
+Primero atrae → valida → luego vende. Regla 60/30/10.
+El cliente compra una vez. La audiencia se queda. Construye comunidad primero.
+
+CLASIFICACION V1-V2-V3:
+V1 VIRALIDAD (ATRACCION) = llamar su atencion
+  - Contenido: tendencias, datos sorprendentes, errores comunes, preguntas polemicas
+  - Tono: energetico, emocional, curioso, entretenido
+  - CTA: "Comenta [PALABRA]", "Guardalo", "Sigueme porque publico X diario", "Compartelo"
+
+V2 VALIDACION (RETENCION) = evaluar su necesidad
+  - Contenido: casos de exito, detras de camaras, testimonios, FAQs, proceso real
+  - Tono: autentico, humano, criterioso, prueba social
+  - CTA: "Guarda esto", "Etiqueta a alguien que necesita verlo", "Comenta si te paso"
+
+V3 VENTA (DECISION) = llevarlo a la compra
+  - Contenido: oferta, demostracion, beneficios directos, objeciones resueltas
+  - Tono: comercial directo, urgencia consciente, sin presion, invitacion
+  - CTA: "Escribeme [PALABRA] al DM", "Link en bio", "Respondeme con X"
+
+REGLAS DE ORO (aplican a TODOS los guiones):
+- NO vender directo en guiones V1 o V2
+- NO parecer anuncio
+- NO hablar como empresa, hablar como persona real
+- Mostrar realidad, no perfeccion
+- UN SOLO CTA por guion
+- Hook siempre habla del BENEFICIO del espectador, no del creador
+
+ESTRUCTURA GANADORA UNIVERSAL:
+Hook potente (0-3s, habla del problema/beneficio del espectador)
+→ Construccion (desarrollo, proceso, historia)
+→ Punto de impacto (lo mas sorprendente o emocional)
+→ CTA especifico segun categoria
+
+CTA POR CATEGORIA (CRITICO - respetar siempre):
+ATRACCION → "Comenta [X]", "Sigueme", "Guarda esto", "Comparte con alguien"
+RETENCION → "Guarda", "Etiqueta a [perfil de audiencia]", "Comenta si te identificas"
+VENTA → "Escribeme [PALABRA]", "DM con [X]", "Link en bio", "Respondeme"
+
+PARA G1 EDUCATIVO (V1 - 30-45s):
+Estructura VSL: Hook beneficio → Valor diario → Autoridad con numeros reales
+→ Diferenciador → Incentivo → CTA seguir/guardar
+La gente no sigue por simpatia, sigue por frecuencia + valor.
+
+PARA G2 DIRECTO (15-25s):
+One Shot: Hook → Contexto → Mensaje central → CTA unico
+Sin relleno. Solo lo esencial.
+
+PARA G3 STORYTELLING (V2 - 30-45s):
+Conexion emocional → Problema real vivido → Descubrimiento/giro → Transformacion → CTA
+Usa casos reales o situaciones con las que la audiencia se identifique.
+
+PARA G4 CONVERSION (V3 - 20-35s):
+Logica DD: Diagnostico (dolor) → Visualizar meta → Brecha visible → Compromiso/CTA
+No empujas la venta. Muestras la distancia entre donde esta y donde quiere llegar.
+La decision es del cliente.
+
+TIPOS DE CIERRE PARA G4 (elegir el mas adecuado al video):
+- Escasez: "Solo esta semana..."
+- Consecuencia: "Cada dia sin esto te cuesta..."
+- Progresivo: pregunta que lleva al si
+- Valor: recapitula beneficio antes del CTA
+- Garantia: reduce riesgo percibido`;
+
+// ── 12 STRUCTURES ─────────────────────────────────────────────────────────────
+const STRUCTURES_TEXT = `
+LAS 12 ESTRUCTURAS DE GUION:
+
+ATRACCION (V1):
+1. Sintoma → Creencia erronea → Problema invisible → Micro-explicacion → Mini solucion → CTA
+2. Contradiccion directa → Reframe → Ensenanza → Aplicacion
+3. Pregunta incomoda → Diagnostico → Clasificacion → Solucion por tipo
+4. Mito → Demolicion → Verdad → Sistema simple
+
+RETENCION (V2):
+5. Open Loop → Desarrollo → Giro inesperado → Resolucion
+6. Antes → Intentos fallidos → Descubrimiento clave → Despues → Leccion
+7. Demostracion → Explicacion → Breakdown → CTA
+8. Error comun → Correccion → Comparacion → Resultado
+
+VENTA (V3):
+9. Dolor → Valor → Autoridad → Objecion → CTA
+10. Historia → Identificacion → Punto de quiebre → Solucion → Oferta
+11. Problema → Costo de no actuar → Oportunidad → CTA urgente
+12. Micro-valor → Prueba social → Expansion → Cierre`;
+
 // ── H1: VIDEO ANALYSIS ────────────────────────────────────────────────────────
 app.post('/api/h1/analyze', async (req, res) => {
   try {
@@ -128,7 +223,7 @@ app.post('/api/h1/analyze', async (req, res) => {
     const platform = videoUrl?.includes('tiktok') ? 'TikTok' : 'Instagram';
     const hasNiche = userNiche?.trim().length > 0;
 
-    // Get video data from Modal
+    // Step 1: Get video data from Modal
     let videoData = preloadedVideoData || null;
     let modalWorked = !!preloadedVideoData;
 
@@ -151,10 +246,9 @@ app.post('/api/h1/analyze', async (req, res) => {
     const hasFrames = videoData.key_frames?.length > 0;
     const learningContext = hasNiche ? getLearningContext(userNiche) : '';
 
-    // Build Claude message
+    // Step 2: Build Claude message
     const userContent = [];
 
-    // Add hook frames
     if (hasFrames) {
       const hookFrames = videoData.key_frames.filter(f => f.section === 'hook').slice(0, 2);
       for (const frame of hookFrames) {
@@ -170,120 +264,123 @@ URL: ${videoUrl || 'video-subido'}
 Plataforma: ${platform}
 Duracion: ${videoData.duration || 0}s
 Nicho del usuario: ${hasNiche ? userNiche : 'No especificado'}
-Generar guiones: ${hasNiche ? 'SI - 4 guiones con angulos distintos' : 'NO - solo reporte'}
+Generar guiones: ${hasNiche ? 'SI - 4 guiones con angulos distintos' : 'NO - solo reporte completo'}
+Video procesado con IA visual: ${modalWorked ? 'SI' : 'NO'}
 
-TRANSCRIPCION COMPLETA DEL VIDEO:
-${hasTranscript ? videoData.full_transcript : '(No disponible - analiza con la URL e infiere lo que puedas)'}
+TRANSCRIPCION COMPLETA:
+${hasTranscript ? videoData.full_transcript : '(No disponible)'}
 
-TRANSCRIPCION CON TIMESTAMPS:
+TIMESTAMPS:
 ${videoData.transcript_segments?.length > 0
   ? videoData.transcript_segments.map(s => `[${s.start}s] ${s.text}`).join('\n')
   : '(No disponible)'}
 
 ${learningContext}
 
+${MARKETING_FRAMEWORK}
+
+${STRUCTURES_TEXT}
+
 INSTRUCCIONES CRITICAS:
-1. Analiza objetivamente basandote en transcripcion y frames disponibles
-2. Determina la categoria CORRECTA con criterio objetivo:
-   - ATRACCION: educa, informa, atrae seguidores nuevos
-   - RETENCION: storytelling, casos reales, resultados, mantiene audiencia
-   - VENTA: busca generar clientes, ventas o conversiones directas
-3. Elige LA UNICA estructura correcta de las 12. La misma entrada siempre = la misma salida.
+1. Analiza el video objetivamente. Para el MISMO video SIEMPRE detectas la MISMA categoria y estructura.
+2. Determina la categoria exacta: ATRACCION (V1), RETENCION (V2) o VENTA (V3)
+   - ATRACCION: educa, informa, atrae nuevos seguidores, genera alcance
+   - RETENCION: storytelling, casos reales, resultados, genera confianza
+   - VENTA: busca convertir, generar clientes o ventas directas
+3. Elige la estructura MAS adecuada de las 12 segun el contenido real del video
+4. Detecta el formato probable: Reel/TikTok, Carrusel, Historia, etc.
 
-LAS 12 ESTRUCTURAS:
-ATRACCION:
-1. Sintoma -> Creencia erronea -> Problema invisible -> Micro-explicacion -> Mini solucion -> CTA
-2. Contradiccion directa -> Reframe -> Ensenanza -> Aplicacion
-3. Pregunta incomoda -> Diagnostico -> Clasificacion -> Solucion por tipo
-4. Mito -> Demolicion -> Verdad -> Sistema simple
-RETENCION:
-5. Open Loop -> Desarrollo -> Giro inesperado -> Resolucion
-6. Antes -> Intentos fallidos -> Descubrimiento clave -> Despues -> Leccion
-7. Demostracion -> Explicacion -> Breakdown -> CTA
-8. Error comun -> Correccion -> Comparacion -> Resultado
-VENTA:
-9. Dolor -> Valor -> Autoridad -> Objecion -> CTA
-10. Historia -> Identificacion -> Punto de quiebre -> Solucion -> Oferta
-11. Problema -> Costo de no actuar -> Oportunidad -> CTA urgente
-12. Micro-valor -> Prueba social -> Expansion -> Cierre
+${hasNiche ? `5. Genera 4 guiones SIEMPRE EN ESPANOL adaptados a "${userNiche}":
 
-${hasNiche ? `4. Genera 4 guiones SIEMPRE EN ESPANOL adaptados a "${userNiche}":
+G1 EDUCATIVO (V1 Atraccion - 30-45s / 80-110 palabras):
+Angulo: ensenanza directa, posicionas como experto del nicho
+CTA: invita a seguir, guardar o comentar (NO ventas)
 
-GUION 1 - EDUCATIVO (30-45s / 80-110 palabras):
-Usa la estructura elegida. Angulo: ensenanza directa, posicionas como experto.
+G2 DIRECTO (15-25s / 40-60 palabras):
+Angulo: one shot, directo al punto, sin relleno
+CTA: el mas simple y especifico posible
 
-GUION 2 - DIRECTO (15-25s / 40-60 palabras):
-Version comprimida al maximo. Solo hook + valor + CTA. Sin relleno.
+G3 STORYTELLING (V2 Retencion - 30-45s / 80-110 palabras):
+Angulo: historia personal o caso real de cliente, genera identificacion
+CTA: invita a guardar, etiquetar o comentar
 
-GUION 3 - STORYTELLING (30-45s / 80-110 palabras):
-Misma estructura pero contada como historia personal o caso de cliente real.
+G4 CONVERSION (V3 Venta - 20-35s / 60-90 palabras):
+Angulo: urgencia consciente, muestra la brecha, invita a actuar
+CTA: DM, link en bio o accion especifica (SI puede ser venta)
 
-GUION 4 - CONVERSION (20-35s / 60-90 palabras):
-Orientado a generar accion inmediata. Mas urgencia, mas especifico en el CTA.
-
-REGLAS OBLIGATORIAS PARA TODOS LOS GUIONES:
+REGLAS ABSOLUTAS PARA TODOS LOS GUIONES:
 - SIEMPRE EN ESPANOL sin excepcion
-- Lenguaje natural y conversacional, NUNCA corporativo
+- Natural y conversacional, NUNCA corporativo ni de anuncio
 - Cada frase maxima 8 palabras
 - Salto de linea entre cada frase
-- Primera frase = hook que para el scroll
-- Ultima frase = CTA claro y especifico
-- Listo para grabar sin instrucciones de direccion` : ''}
+- Primera frase = hook que para el scroll (habla del espectador, no del creador)
+- CTA especifico segun la categoria del guion (no todas son venta)
+- Listos para grabar, sin indicaciones de direccion` : ''}
 
-Responde SOLO con JSON valido, sin markdown, sin texto extra:
+Responde SOLO con JSON valido, sin markdown:
 {
   "reporte": {
     "hook_visual": "que se ve exactamente en los primeros 3 segundos",
-    "hook_verbal": "primeras palabras exactas del video o 'No detectado'",
-    "tipo_hook": "curiosidad|dolor|promesa|controversia|pregunta|demostracion",
+    "hook_verbal": "primeras palabras exactas del video",
+    "tipo_hook": "curiosidad|dolor|promesa|controversia|pregunta|demostracion|dato",
     "texto_pantalla": "texto superpuesto en pantalla o 'No detectado'",
     "transcripcion_limpia": "transcripcion completa limpia y editada",
-    "ritmo_corte": "velocidad y frecuencia de cortes estimada",
-    "musica_sonido": "tipo de musica o sonido de fondo",
-    "cta_visual": "CTA visual o 'No detectado'",
+    "ritmo_corte": "lento|medio|rapido - frecuencia estimada de cortes",
+    "musica_sonido": "tipo de musica o sonido de fondo detectado",
+    "cta_visual": "CTA visual si existe o 'No detectado'",
     "cta_verbal": "CTA verbal exacto o 'No detectado'",
     "estructura_detectada": "como esta organizado el video paso a paso",
-    "por_que_viral": "analisis de por que este video funciona",
+    "por_que_viral": "analisis profundo de por que este video funciona viralmente",
     "elementos_clave": ["elemento 1", "elemento 2", "elemento 3"],
     "audiencia_ideal": "descripcion exacta de a quien le habla este video",
-    "emocion_principal": "curiosidad|miedo|aspiracion|humor|sorpresa|empatia|frustracion",
-    "momento_abandono": "segundo estimado donde podrian abandonar y por que",
-    "diferenciador": "que hace unico este video vs otros del nicho",
-    "mejoras_posibles": "1-2 cosas concretas que harian este video aun mejor"
+    "emocion_principal": "curiosidad|miedo|aspiracion|humor|sorpresa|empatia|frustracion|inspiracion",
+    "momento_abandono": "segundo estimado donde podrian perder la audiencia y por que",
+    "diferenciador": "que hace unico este video vs otros del mismo nicho",
+    "mejoras_posibles": "1-2 cosas concretas que harian este video aun mejor",
+    "categoria_contenido": "V1 Viralidad|V2 Validacion|V3 Venta",
+    "formato_recomendado": "Reel|TikTok|Carrusel|Historia|Post"
   },
   "categoria": "ATRACCION|RETENCION|VENTA",
   "estructura_elegida": {
     "numero": 1,
     "nombre": "nombre exacto de la estructura",
-    "razon": "por que esta estructura es la correcta para este video"
+    "razon": "por que esta estructura es la correcta para este video y este nicho especificamente"
   },
   ${hasNiche ? `"guiones": {
     "g1": {
       "angulo": "EDUCATIVO",
+      "categoria_v": "V1 - Atraccion",
       "duracion": "30-45s",
       "palabras": 95,
-      "pasos": ["Hook (0-3s): texto del paso", "Desarrollo (3-35s): texto del paso", "CTA (35-45s): texto del paso"],
-      "guion": "Primera linea del guion.\nSegunda linea.\nTercera linea.\nCuarta linea."
+      "cta_tipo": "seguir|guardar|comentar",
+      "pasos": ["Hook (0-3s): texto del paso", "Desarrollo (3-35s): texto", "CTA (35-45s): texto"],
+      "guion": "Primera linea.\nSegunda linea.\nTercera linea.\nCuarta linea."
     },
     "g2": {
       "angulo": "DIRECTO",
+      "categoria_v": "V1 - Atraccion",
       "duracion": "15-25s",
       "palabras": 50,
+      "cta_tipo": "guardar|comentar",
       "pasos": ["Hook: texto", "Valor core: texto", "CTA: texto"],
       "guion": "Primera linea corta.\nSegunda linea.\nTercera linea."
     },
     "g3": {
       "angulo": "STORYTELLING",
+      "categoria_v": "V2 - Validacion",
       "duracion": "30-45s",
       "palabras": 95,
-      "pasos": ["Situacion inicial: texto", "Problema/conflicto: texto", "Descubrimiento: texto", "Resultado+CTA: texto"],
+      "cta_tipo": "guardar|etiquetar|comentar",
+      "pasos": ["Situacion inicial: texto", "Conflicto: texto", "Descubrimiento: texto", "Resultado+CTA: texto"],
       "guion": "Primera linea historia.\nSegunda linea.\nTercera linea."
     },
     "g4": {
       "angulo": "CONVERSION",
+      "categoria_v": "V3 - Venta",
       "duracion": "20-35s",
       "palabras": 75,
-      "pasos": ["Dolor directo: texto", "Solucion especifica: texto", "Urgencia+CTA: texto"],
+      "cta_tipo": "DM|link bio|accion directa",
+      "pasos": ["Dolor/diagnostico: texto", "Brecha visible: texto", "Solucion+CTA: texto"],
       "guion": "Primera linea conversion.\nSegunda linea.\nTercera linea."
     }
   },` : '"guiones": null,'}
@@ -298,49 +395,61 @@ Responde SOLO con JSON valido, sin markdown, sin texto extra:
 }`
     });
 
-    const SYSTEM = `Eres el mejor analizador de videos virales del mundo y experto en guiones de contenido.
+    const SYSTEM = `Eres el mejor analizador de contenido viral y experto en guiones basado en la metodologia K+E (Kenny + Empresarios).
 REGLAS ABSOLUTAS:
-1. Para el MISMO VIDEO siempre detectas la MISMA categoria y estructura - eres 100% consistente
-2. Los guiones estan SIEMPRE EN ESPANOL sin excepcion
+1. Para el MISMO video siempre detectas la MISMA categoria y estructura - consistencia total
+2. Los guiones estan SIEMPRE EN ESPANOL
 3. Los guiones son naturales, conversacionales, listos para grabar
-4. NUNCA usas lenguaje corporativo
-5. SIEMPRE respondes SOLO con JSON valido, sin markdown ni texto adicional
-6. Si hay nicho, SIEMPRE generas los 4 guiones completos`;
+4. NUNCA usas lenguaje corporativo ni de anuncio
+5. Los CTAs respetan la categoria: ATRACCION no vende, VENTA si puede vender
+6. SIEMPRE respondes SOLO con JSON valido, sin markdown ni texto adicional
+7. Si hay nicho, SIEMPRE generas los 4 guiones completos`;
 
     const rawResponse = await callClaude(SYSTEM, userContent, 8000);
     const analysis = parseJSON(rawResponse);
     analysis.id = Date.now().toString();
 
-    // CRITICAL FIX: Force guiones if nicho was provided but Claude didn't include them
-    if (hasNiche && (!analysis.guiones || Object.keys(analysis.guiones).length === 0)) {
-      console.log('Guiones missing, generating separately...');
-      const guionPrompt = `Genera 4 guiones en espanol para el nicho "${userNiche}" basados en este analisis de video:
-Categoria: ${analysis.categoria}
-Estructura: ${analysis.estructura_elegida?.nombre}
-Hook detectado: ${analysis.reporte?.hook_verbal}
+    // CRITICAL FIX: Force guiones generation if nicho provided but missing
+    if (hasNiche && (!analysis.guiones || Object.keys(analysis.guiones || {}).length < 4)) {
+      console.log('Guiones missing or incomplete - generating separately...');
+      const guionPrompt = `Genera 4 guiones en espanol para el nicho "${userNiche}" basados en:
+Categoria detectada: ${analysis.categoria}
+Estructura elegida: ${analysis.estructura_elegida?.nombre}
+Hook del video: ${analysis.reporte?.hook_verbal}
 Por que es viral: ${analysis.reporte?.por_que_viral}
+Emocion principal: ${analysis.reporte?.emocion_principal}
 ${learningContext}
 
-4 guiones:
-G1 EDUCATIVO 30-45s (80-110 palabras)
-G2 DIRECTO 15-25s (40-60 palabras)  
-G3 STORYTELLING 30-45s (80-110 palabras)
-G4 CONVERSION 20-35s (60-90 palabras)
+${MARKETING_FRAMEWORK}
 
-JSON:
-{"g1":{"angulo":"EDUCATIVO","duracion":"30-45s","palabras":95,"pasos":["paso1","paso2"],"guion":"linea1\nlinea2"},"g2":{"angulo":"DIRECTO","duracion":"15-25s","palabras":50,"pasos":["paso1"],"guion":"linea1\nlinea2"},"g3":{"angulo":"STORYTELLING","duracion":"30-45s","palabras":95,"pasos":["paso1","paso2"],"guion":"linea1\nlinea2"},"g4":{"angulo":"CONVERSION","duracion":"20-35s","palabras":75,"pasos":["paso1","paso2"],"guion":"linea1\nlinea2"}}`;
+IMPORTANTE: CTAs correctos por guion:
+G1 (EDUCATIVO/V1): CTA de seguir, guardar o comentar. NO venta.
+G2 (DIRECTO/V1): CTA simple de guardar o comentar.
+G3 (STORYTELLING/V2): CTA de guardar, etiquetar o comentar.
+G4 (CONVERSION/V3): CTA de DM, link en bio o accion directa. SI puede vender.
+
+Responde SOLO con JSON:
+{
+  "g1": {"angulo":"EDUCATIVO","categoria_v":"V1 - Atraccion","duracion":"30-45s","palabras":95,"cta_tipo":"seguir","pasos":["Hook: texto","Desarrollo: texto","CTA: texto"],"guion":"linea1\nlinea2\nlinea3\nlinea4\nlinea5"},
+  "g2": {"angulo":"DIRECTO","categoria_v":"V1 - Atraccion","duracion":"15-25s","palabras":50,"cta_tipo":"guardar","pasos":["Hook: texto","Core: texto","CTA: texto"],"guion":"linea1\nlinea2\nlinea3"},
+  "g3": {"angulo":"STORYTELLING","categoria_v":"V2 - Validacion","duracion":"30-45s","palabras":95,"cta_tipo":"etiquetar","pasos":["Inicio: texto","Conflicto: texto","Resolucion: texto"],"guion":"linea1\nlinea2\nlinea3\nlinea4\nlinea5"},
+  "g4": {"angulo":"CONVERSION","categoria_v":"V3 - Venta","duracion":"20-35s","palabras":75,"cta_tipo":"DM","pasos":["Dolor: texto","Brecha: texto","CTA: texto"],"guion":"linea1\nlinea2\nlinea3\nlinea4"}
+}`;
 
       try {
-        const guionRaw = await callClaude('Eres experto en guiones virales. Solo JSON valido.', guionPrompt, 4000);
-        const guionData = parseJSON(guionRaw);
-        analysis.guiones = guionData;
+        const guionRaw = await callClaude(
+          'Experto en guiones virales metodologia K+E. Solo JSON valido, sin markdown.',
+          guionPrompt,
+          4000
+        );
+        analysis.guiones = parseJSON(guionRaw);
       } catch(e) {
         console.error('Guion fallback failed:', e.message);
         analysis.guiones = {
-          g1: { angulo: 'EDUCATIVO', duracion: '30-45s', palabras: 0, pasos: [], guion: 'Error generando guion. Intenta de nuevo con el mismo video.' },
-          g2: { angulo: 'DIRECTO', duracion: '15-25s', palabras: 0, pasos: [], guion: 'Error generando guion. Intenta de nuevo.' },
-          g3: { angulo: 'STORYTELLING', duracion: '30-45s', palabras: 0, pasos: [], guion: 'Error generando guion. Intenta de nuevo.' },
-          g4: { angulo: 'CONVERSION', duracion: '20-35s', palabras: 0, pasos: [], guion: 'Error generando guion. Intenta de nuevo.' }
+          g1: { angulo: 'EDUCATIVO', categoria_v: 'V1 - Atraccion', duracion: '30-45s', palabras: 0, cta_tipo: 'seguir', pasos: [], guion: 'Error generando guion. Intenta de nuevo con el mismo video.' },
+          g2: { angulo: 'DIRECTO', categoria_v: 'V1 - Atraccion', duracion: '15-25s', palabras: 0, cta_tipo: 'guardar', pasos: [], guion: 'Error generando guion. Intenta de nuevo.' },
+          g3: { angulo: 'STORYTELLING', categoria_v: 'V2 - Validacion', duracion: '30-45s', palabras: 0, cta_tipo: 'etiquetar', pasos: [], guion: 'Error generando guion. Intenta de nuevo.' },
+          g4: { angulo: 'CONVERSION', categoria_v: 'V3 - Venta', duracion: '20-35s', palabras: 0, cta_tipo: 'DM', pasos: [], guion: 'Error generando guion. Intenta de nuevo.' }
         };
       }
     }
@@ -351,6 +460,7 @@ JSON:
       url: videoUrl || 'video-subido',
       nicho: userNiche || '',
       categoria: analysis.categoria,
+      categoria_v: analysis.reporte?.categoria_contenido,
       estructura: analysis.estructura_elegida?.nombre,
       fecha: new Date().toLocaleDateString('es-ES'),
       data: analysis
@@ -373,7 +483,6 @@ app.post('/api/h1/upload', upload.single('video'), async (req, res) => {
     const fileBuffer = fs.readFileSync(filePath);
     const fileBase64 = fileBuffer.toString('base64');
     fs.unlinkSync(filePath);
-
     if (!MODAL_ENDPOINT_URL) throw new Error('MODAL_ENDPOINT_URL no configurada.');
     const r = await fetch(MODAL_ENDPOINT_URL, {
       method: 'POST',
@@ -452,26 +561,31 @@ app.post('/api/h2/analyze', async (req, res) => {
     const top10 = scored.slice(0,10);
 
     const prompt = `Analiza estos top 10 posts por engagement real de ${isTikTok ? 'TikTok' : 'Instagram'}.
-Formula: ${isTikTok ? 'Guardados×4 + Compartidos×3 + Comentarios×2 + Likes + Views×0.05' : 'IEI = (Likes + Comentarios×5) / Views × (1/log10(Seguidores)) × 100'}
+Formula usada: ${isTikTok
+  ? 'Guardados×4 + Compartidos×3 + Comentarios×2 + Likes×1 + Views×0.05'
+  : 'IEI = (Likes + Comentarios×5) / Views × (1/log10(Seguidores)) × 100'}
 
 ${JSON.stringify(top10.map((p,i) => ({
-  rank: i+1, caption: p.caption, views: p.views, likes: p.likes,
-  comments: p.comments, shares: p.shares, saves: p.saves,
+  rank: i+1, caption: p.caption,
+  views: p.views, likes: p.likes, comments: p.comments, shares: p.shares, saves: p.saves,
   score: parseFloat(p.engagement_score.toFixed(4))
 })), null, 2)}
 
-JSON:
+Clasifica cada post segun la metodologia V1-V2-V3 y detecta patrones.
+Responde SOLO con JSON:
 {
   "patron_general": "que tienen en comun estos 10 posts",
+  "categoria_dominante": "V1|V2|V3 - cual domina y por que",
   "que_genera_engagement": "que hace que generen interaccion real",
   "hook_pattern": "patron de hook que se repite",
   "tipo_contenido_top": "tipo de contenido que mas funciona",
-  "tono": "educativo|entretenimiento|inspiracional|ventas",
+  "tono": "educativo|entretenimiento|inspiracional|ventas|mixto",
+  "cta_pattern": "tipo de CTA mas usado",
   "oportunidad_detectada": "que falta o podria mejorarse",
   "resumen": "insight principal en una frase"
 }`;
 
-    const rawPatterns = await callClaude('Experto en analisis viral. Solo JSON valido.', prompt, 2000);
+    const rawPatterns = await callClaude('Experto en analisis viral metodologia K+E. Solo JSON valido.', prompt, 2000);
     const patterns = parseJSON(rawPatterns);
 
     const result = {
@@ -481,7 +595,7 @@ JSON:
       followers: profileFollowers,
       total_analyzed: posts.length,
       formula: isTikTok
-        ? 'Guardados×4 + Compartidos×3 + Comentarios×2 + Likes + Views×0.05'
+        ? 'Guardados×4 + Compartidos×3 + Comentarios×2 + Likes×1 + Views×0.05'
         : 'IEI = (Likes + Comentarios×5) / Views × (1/log10(Seguidores)) × 100',
       top10, patterns,
       fecha: new Date().toLocaleDateString('es-ES')
